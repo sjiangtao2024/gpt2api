@@ -252,6 +252,7 @@ function TaskCard({ t, onPreview }: { t: GenerationTask; onPreview: () => void }
   const primary = t.results?.[0];
   const cover = primary?.thumb_url || primary?.url || '';
   const isVideo = t.kind === 'video';
+  const imageResults = !isVideo ? (t.results ?? []).filter((row) => row.url || row.thumb_url).slice(0, 4) : [];
   const resolvedCover = useAuthedMediaUrl(cover);
   const error = t.status === 3 ? t.error?.trim() || '生成失败' : '';
 
@@ -266,7 +267,13 @@ function TaskCard({ t, onPreview }: { t: GenerationTask; onPreview: () => void }
       }}
     >
       <div className="relative aspect-square overflow-hidden bg-klein-gradient-soft" style={{ contain: 'paint' }}>
-        {resolvedCover ? (
+        {imageResults.length > 1 ? (
+          <div className="grid h-full w-full grid-cols-2 gap-px bg-border">
+            {imageResults.map((row, index) => (
+              <HistoryImageTile key={`${row.url || row.thumb_url}-${index}`} src={row.thumb_url || row.url || ''} />
+            ))}
+          </div>
+        ) : resolvedCover ? (
           isVideo ? (
             <div className="relative h-full w-full">
               <img src={resolvedCover} alt="" className="h-full w-full object-cover" loading="lazy" />
@@ -296,6 +303,11 @@ function TaskCard({ t, onPreview }: { t: GenerationTask; onPreview: () => void }
             </span>
           </div>
         )}
+        {imageResults.length > 1 && (
+          <span className="absolute left-2 top-2 rounded-full bg-black/60 px-2 py-0.5 text-xs text-white">
+            {imageResults.length} 张
+          </span>
+        )}
       </div>
 
       <div className="space-y-2 p-3">
@@ -310,6 +322,11 @@ function TaskCard({ t, onPreview }: { t: GenerationTask; onPreview: () => void }
       </div>
     </article>
   );
+}
+
+function HistoryImageTile({ src }: { src: string }) {
+  const resolved = useAuthedMediaUrl(src);
+  return resolved ? <img src={resolved} alt="" className="h-full w-full object-cover" loading="lazy" /> : <div className="bg-surface-2" />;
 }
 
 function PreviewModal({ preview, onClose }: { preview: HistoryPreview; onClose: () => void }) {

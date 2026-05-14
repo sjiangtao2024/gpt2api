@@ -1,7 +1,7 @@
 # ----- 多阶段构建：构建 4 个独立二进制并打入同一镜像 -----
 FROM golang:1.24-alpine AS builder
 
-ENV CGO_ENABLED=0 GOOS=linux GOARCH=amd64
+ENV CGO_ENABLED=0 GOOS=linux
 
 WORKDIR /src
 

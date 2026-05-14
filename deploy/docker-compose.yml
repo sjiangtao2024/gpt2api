@@ -12,8 +12,12 @@ x-common-env: &common-env
   KLEIN_JWT_SECRET: ${KLEIN_JWT_SECRET}
   KLEIN_JWT_REFRESH_SECRET: ${KLEIN_JWT_REFRESH_SECRET}
   KLEIN_AES_KEY: ${KLEIN_AES_KEY}
+  KLEIN_PROVIDER_GPT: ${KLEIN_PROVIDER_GPT:-real}
+  KLEIN_PROVIDER_GROK: ${KLEIN_PROVIDER_GROK:-real}
   KLEIN_OPENAI_BASE: ${KLEIN_OPENAI_BASE:-https://api.openai.com}
   KLEIN_GROK_BASE: ${KLEIN_GROK_BASE:-https://api.x.ai}
+  KLEIN_GPT_BASE_URL: ${KLEIN_GPT_BASE_URL:-https://api.openai.com}
+  KLEIN_GROK_BASE_URL: ${KLEIN_GROK_BASE_URL:-https://grok.com}
   KLEIN_CORS_ORIGINS: ${KLEIN_CORS_ORIGINS}
   KLEIN_LOG_DIR: /app/logs
   TZ: Asia/Shanghai
@@ -70,7 +74,7 @@ services:
       dockerfile: Dockerfile
     container_name: klein-api
     restart: always
-    command: ["/app/api"]
+    entrypoint: ["/app/api"]
     environment:
       <<: *common-env
       KLEIN_NODE_ID: 1
@@ -81,9 +85,7 @@ services:
       mysql:  { condition: service_healthy }
       redis:  { condition: service_healthy }
     healthcheck:
-      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:17180/healthz | grep -q ok || exit 1"]
-      interval: 15s
-      retries: 5
+      disable: true
     deploy:
       resources:
         limits: { cpus: '2', memory: 1G }
@@ -93,7 +95,7 @@ services:
     image: kleinai/backend:latest
     container_name: klein-admin
     restart: always
-    command: ["/app/admin"]
+    entrypoint: ["/app/admin"]
     environment:
       <<: *common-env
       KLEIN_NODE_ID: 2
@@ -112,7 +114,7 @@ services:
     image: kleinai/backend:latest
     container_name: klein-openai
     restart: always
-    command: ["/app/openai"]
+    entrypoint: ["/app/openai"]
     environment:
       <<: *common-env
       KLEIN_NODE_ID: 3
@@ -131,7 +133,7 @@ services:
     image: kleinai/backend:latest
     container_name: klein-worker
     restart: always
-    command: ["/app/worker"]
+    entrypoint: ["/app/worker"]
     environment:
       <<: *common-env
       KLEIN_NODE_ID: 4

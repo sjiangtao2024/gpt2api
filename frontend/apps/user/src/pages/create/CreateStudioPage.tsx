@@ -698,15 +698,18 @@ function HistoryActionMenu({
 }
 
 function WorkCard({ item, onOpen }: { item: GenerationTask; onOpen: (preview: { url: string; type: 'image' | 'video'; title: string }) => void }) {
-  const result = item.results?.[0];
+  const results = item.results ?? [];
+  const result = results[0];
   const thumb = result?.thumb_url;
   const original = result?.url;
   const [thumbFailed, setThumbFailed] = useState(false);
   const [loadedRatio, setLoadedRatio] = useState<string | null>(null);
   const isVideo = item.kind === 'video';
+  const imageResults = isVideo ? [] : results.filter((row) => row.url || row.thumb_url);
+  const hasMultipleImages = imageResults.length > 1;
   const showThumb = !!thumb && !thumbFailed;
   const declaredRatio = result?.width && result?.height ? `${result.width} / ${result.height}` : '';
-  const mediaRatio = loadedRatio || declaredRatio || (isVideo ? '16 / 9' : '1 / 1');
+  const mediaRatio = hasMultipleImages ? '1 / 1' : loadedRatio || declaredRatio || (isVideo ? '16 / 9' : '1 / 1');
   const canOpen = item.status === 2 && !!original;
   const prompt = compactPrompt(item.prompt);
   const setRatioFromImage = (el: HTMLImageElement) => {
@@ -722,58 +725,83 @@ function WorkCard({ item, onOpen }: { item: GenerationTask; onOpen: (preview: { 
 
   return (
     <article className="mb-3 break-inside-avoid overflow-hidden rounded-[6px] bg-neutral-100">
-      <button
-        type="button"
-        disabled={!canOpen}
-        onClick={() => original && onOpen({ url: original, type: isVideo ? 'video' : 'image', title: item.model })}
-        style={{ aspectRatio: mediaRatio }}
-        className={clsx(
-          'relative grid w-full place-items-center overflow-hidden text-neutral-400 transition-[height]',
-          !original && item.status === 1 && 'bg-white',
-          canOpen && 'group cursor-zoom-in',
-        )}
-      >
-        {original ? (
-          isVideo ? (
-            showThumb ? (
-              <img
-                src={thumb}
-                alt=""
-                className="h-full w-full object-cover"
-                loading="lazy"
-                onLoad={(e) => setRatioFromImage(e.currentTarget)}
-                onError={() => setThumbFailed(true)}
-              />
+      {hasMultipleImages ? (
+        <div className="relative grid grid-cols-2 gap-px bg-neutral-200" style={{ aspectRatio: mediaRatio }}>
+          {imageResults.slice(0, 4).map((row, index) => {
+            const url = row.url || row.thumb_url || '';
+            return (
+              <button
+                key={`${url}-${index}`}
+                type="button"
+                disabled={item.status !== 2 || !url}
+                onClick={() => url && onOpen({ url, type: 'image', title: `${item.model} ${index + 1}` })}
+                className="group relative overflow-hidden bg-neutral-50"
+              >
+                {url && <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />}
+                <div className="absolute inset-0 grid place-items-center bg-black/0 opacity-0 transition group-hover:bg-black/20 group-hover:opacity-100">
+                  <span className="grid h-8 w-8 place-items-center rounded-full bg-white/90 text-neutral-950 shadow-sm">
+                    <Maximize2 size={16} />
+                  </span>
+                </div>
+              </button>
+            );
+          })}
+          <div className="absolute left-2 top-2 rounded-full bg-black/55 px-2 py-0.5 text-xs text-white">{imageResults.length} 张图片</div>
+        </div>
+      ) : (
+        <button
+          type="button"
+          disabled={!canOpen}
+          onClick={() => original && onOpen({ url: original, type: isVideo ? 'video' : 'image', title: item.model })}
+          style={{ aspectRatio: mediaRatio }}
+          className={clsx(
+            'relative grid w-full place-items-center overflow-hidden text-neutral-400 transition-[height]',
+            !original && item.status === 1 && 'bg-white',
+            canOpen && 'group cursor-zoom-in',
+          )}
+        >
+          {original ? (
+            isVideo ? (
+              showThumb ? (
+                <img
+                  src={thumb}
+                  alt=""
+                  className="h-full w-full object-cover"
+                  loading="lazy"
+                  onLoad={(e) => setRatioFromImage(e.currentTarget)}
+                  onError={() => setThumbFailed(true)}
+                />
+              ) : (
+                <video
+                  src={original}
+                  className="h-full w-full object-cover"
+                  muted
+                  playsInline
+                  preload="metadata"
+                  onLoadedMetadata={(e) => setRatioFromVideo(e.currentTarget)}
+                />
+              )
             ) : (
-              <video
-                src={original}
-                className="h-full w-full object-cover"
-                muted
-                playsInline
-                preload="metadata"
-                onLoadedMetadata={(e) => setRatioFromVideo(e.currentTarget)}
-              />
+              <img src={original} alt="" className="h-full w-full object-cover" loading="lazy" onLoad={(e) => setRatioFromImage(e.currentTarget)} />
             )
+          ) : item.status === 1 ? (
+            <GeneratingDots />
           ) : (
-            <img src={original} alt="" className="h-full w-full object-cover" loading="lazy" onLoad={(e) => setRatioFromImage(e.currentTarget)} />
-          )
-        ) : item.status === 1 ? (
-          <GeneratingDots />
-        ) : (
-          <div className="flex flex-col items-center gap-2 text-sm">
-            <FileImage size={24} />
-            <span>{statusText(item.status)}</span>
-          </div>
-        )}
-        <div className="absolute left-2 top-2 rounded-full bg-black/55 px-2 py-0.5 text-xs text-white">{item.kind === 'video' ? '\u89c6\u9891' : '\u56fe\u7247'}</div>
-        {canOpen && (
-          <div className="absolute inset-0 grid place-items-center bg-black/0 opacity-0 transition group-hover:bg-black/20 group-hover:opacity-100">
-            <span className="grid h-10 w-10 place-items-center rounded-full bg-white/90 text-neutral-950 shadow-sm">
-              {isVideo ? <Play size={18} fill="currentColor" /> : <Maximize2 size={18} />}
-            </span>
-          </div>
-        )}
-      </button>
+            <div className="flex flex-col items-center gap-2 text-sm">
+              <FileImage size={24} />
+              <span>{statusText(item.status)}</span>
+            </div>
+          )}
+          <div className="absolute left-2 top-2 rounded-full bg-black/55 px-2 py-0.5 text-xs text-white">{item.kind === 'video' ? '\u89c6\u9891' : '\u56fe\u7247'}</div>
+          {canOpen && (
+            <div className="absolute inset-0 grid place-items-center bg-black/0 opacity-0 transition group-hover:bg-black/20 group-hover:opacity-100">
+              <span className="grid h-10 w-10 place-items-center rounded-full bg-white/90 text-neutral-950 shadow-sm">
+                {isVideo ? <Play size={18} fill="currentColor" /> : <Maximize2 size={18} />}
+              </span>
+            </div>
+          )}
+        </button>
+      )}
       <div className="flex items-center gap-1.5 px-2.5 py-2 text-xs text-neutral-500">
         <span className="shrink-0">{fmtRelative(item.created_at)}</span>
         {prompt && <span className="truncate text-neutral-600">{prompt}</span>}

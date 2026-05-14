@@ -195,6 +195,9 @@ func (s *GenerationService) runTask(ctx context.Context, t *model.GenerationTask
 		maxAttempts = s.cfg.RetryMaxAttempts(ctx)
 		retryDelay = s.cfg.RetryBaseDelay(ctx)
 	}
+	if minTimeout := minGPTImage2Timeout(t, refs); timeout < minTimeout {
+		timeout = minTimeout
+	}
 	var acc *model.Account
 	var res *provider.Result
 	var lastErr error
@@ -438,16 +441,30 @@ func accountRequiresCodexRoute(t *model.GenerationTask, params map[string]any) b
 }
 
 func shouldUseGPTWebRoute(params map[string]any) bool {
-	tier := strings.ToUpper(strings.TrimSpace(strParamAny(params, "resolution", strParamAny(params, "size_tier", ""))))
-	if tier == "" {
-		size := strParamAny(params, "size", "")
-		w, h := parseWH(size)
-		if size == "" || w*h <= 1500000 {
-			return true
-		}
-		return false
+	return false
+}
+
+func minGPTImage2Timeout(t *model.GenerationTask, refs []string) time.Duration {
+	if t == nil || t.Provider != model.ProviderGPT || t.Kind != string(provider.KindImage) || !strings.EqualFold(t.ModelCode, "gpt-image-2") {
+		return 0
 	}
-	return tier == "1K" || tier == "1"
+	if len(refs) == 0 && t.Count <= 1 {
+		return 0
+	}
+	timeout := 10 * time.Minute
+	if len(refs) > 0 {
+		timeout = 20 * time.Minute
+	}
+	if t.Count > 1 {
+		perImage := time.Duration(t.Count) * 5 * time.Minute
+		if perImage > timeout {
+			timeout = perImage
+		}
+	}
+	if timeout > 30*time.Minute {
+		timeout = 30 * time.Minute
+	}
+	return timeout
 }
 
 func isCodexOAuthAccount(acc *model.Account) bool {

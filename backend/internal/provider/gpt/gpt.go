@@ -19,6 +19,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"image"
 	_ "image/gif"
@@ -482,15 +483,10 @@ func (p *Provider) generateImage2(ctx context.Context, req *provider.Request) (*
 	if req.Mode == provider.ModeI2I || len(req.RefAssets) > 0 || strings.EqualFold(strParam(req.Params, "operation", ""), "edit") {
 		action = "edit"
 	}
-	content := []map[string]any{{"type": "input_text", "text": req.Prompt}}
-	for _, ref := range req.RefAssets {
-		ref = strings.TrimSpace(ref)
-		if ref == "" {
-			continue
-		}
-		content = append(content, map[string]any{"type": "input_image", "image_url": ref})
+	client, err := p.httpClient(req.ProxyURL)
+	if err != nil {
+		return nil, err
 	}
-	input := []responseInputItem{{Type: "message", Role: "user", Content: content}}
 	tool := map[string]any{
 		"type":   "image_generation",
 		"action": action,
@@ -509,24 +505,9 @@ func (p *Provider) generateImage2(ctx context.Context, req *provider.Request) (*
 	if mask := firstStringParam(req.Params, "mask", "mask_image_url"); mask != "" {
 		tool["input_image_mask"] = map[string]string{"image_url": mask}
 	}
-	body := responseReq{
-		Instructions:      "You are an image generation assistant. Follow the user's prompt and return the generated image.",
-		Stream:            true,
-		Reasoning:         map[string]any{"effort": "medium", "summary": "auto"},
-		ParallelToolCalls: true,
-		Include:           []string{"reasoning.encrypted_content"},
-		Model:             mainModel,
-		Store:             false,
-		ToolChoice:        "auto",
-		Input:             input,
-		Tools:             []map[string]any{tool},
-	}
+	refBatches := image2RefBatches(req.RefAssets, count, action == "edit")
 
 	start := time.Now()
-	client, err := p.httpClient(req.ProxyURL)
-	if err != nil {
-		return nil, err
-	}
 	width, height := parseSize(size)
 	assets := make([]provider.Asset, 0, count)
 	logUpstream(ctx, req, provider.UpstreamLogEntry{
@@ -542,11 +523,41 @@ func (p *Provider) generateImage2(ctx context.Context, req *provider.Request) (*
 			"count":          count,
 			"action":         action,
 			"ref_count":      len(req.RefAssets),
+			"ref_batches":    len(refBatches),
 			"proxy":          req.ProxyURL != "",
 			"has_toolchoice": true,
 		},
 	})
 	for i := 0; i < count && len(assets) < count; i++ {
+		batchRefs := refBatches[0]
+		if i < len(refBatches) {
+			batchRefs = refBatches[i]
+		}
+		content := []map[string]any{{"type": "input_text", "text": req.Prompt}}
+		for _, ref := range batchRefs {
+			ref = strings.TrimSpace(ref)
+			if ref == "" {
+				continue
+			}
+			imageURL, err := inputImageURL(ctx, client, ref)
+			if err != nil {
+				return nil, err
+			}
+			content = append(content, map[string]any{"type": "input_image", "image_url": imageURL})
+		}
+		input := []responseInputItem{{Type: "message", Role: "user", Content: content}}
+		body := responseReq{
+			Instructions:      "You are an image generation assistant. Follow the user's prompt and return one edited image. Do not create a collage or contact sheet unless the user explicitly asks for one.",
+			Stream:            true,
+			Reasoning:         map[string]any{"effort": "medium", "summary": "auto"},
+			ParallelToolCalls: true,
+			Include:           []string{"reasoning.encrypted_content"},
+			Model:             mainModel,
+			Store:             false,
+			ToolChoice:        "auto",
+			Input:             input,
+			Tools:             []map[string]any{tool},
+		}
 		attemptBody := body
 		retriedWithoutToolChoice := false
 		for {
@@ -578,6 +589,7 @@ func (p *Provider) generateImage2(ctx context.Context, req *provider.Request) (*
 						"count":      count,
 						"tool_model": toolModel,
 						"action":     action,
+						"batch_refs": len(batchRefs),
 					},
 				})
 				return nil, fmt.Errorf("gpt image2 http: %w", err)
@@ -600,6 +612,7 @@ func (p *Provider) generateImage2(ctx context.Context, req *provider.Request) (*
 							"count":      count,
 							"tool_model": toolModel,
 							"action":     action,
+							"batch_refs": len(batchRefs),
 						},
 					})
 				}
@@ -634,6 +647,7 @@ func (p *Provider) generateImage2(ctx context.Context, req *provider.Request) (*
 						"count":      count,
 						"tool_model": toolModel,
 						"action":     action,
+						"batch_refs": len(batchRefs),
 					},
 				})
 				return nil, fmt.Errorf("gpt image2 %d: %s", resp.StatusCode, snippet(raw, 320))
@@ -654,8 +668,28 @@ func (p *Provider) generateImage2(ctx context.Context, req *provider.Request) (*
 						"count":      count,
 						"tool_model": toolModel,
 						"action":     action,
+						"batch_refs": len(batchRefs),
 					},
 				})
+				if len(assets) > 0 && (errors.Is(err, context.DeadlineExceeded) || strings.Contains(err.Error(), context.DeadlineExceeded.Error())) {
+					logUpstream(ctx, req, provider.UpstreamLogEntry{
+						Provider: "gpt",
+						Stage:    "codex.partial_success",
+						Method:   "POST",
+						URL:      url,
+						Error:    err.Error(),
+						Meta: map[string]any{
+							"model":      modelCode,
+							"size":       size,
+							"count":      count,
+							"tool_model": toolModel,
+							"action":     action,
+							"assets":     len(assets),
+							"batch_refs": len(batchRefs),
+						},
+					})
+					return &provider.Result{TaskID: req.TaskID, Assets: assets, Latency: time.Since(start)}, nil
+				}
 				return nil, err
 			}
 			if completed.Error != nil && completed.Error.Message != "" {
@@ -672,6 +706,7 @@ func (p *Provider) generateImage2(ctx context.Context, req *provider.Request) (*
 						"count":      count,
 						"tool_model": toolModel,
 						"action":     action,
+						"batch_refs": len(batchRefs),
 					},
 				})
 				return nil, fmt.Errorf("gpt image2: %s", completed.Error.Message)
@@ -711,6 +746,7 @@ func (p *Provider) generateImage2(ctx context.Context, req *provider.Request) (*
 						"tool_model":  toolModel,
 						"action":      action,
 						"asset_index": len(assets),
+						"batch_refs":  len(batchRefs),
 					},
 				})
 				if len(assets) >= count {
@@ -752,6 +788,31 @@ func (p *Provider) generateImage2(ctx context.Context, req *provider.Request) (*
 		},
 	})
 	return &provider.Result{TaskID: req.TaskID, Assets: assets, Latency: time.Since(start)}, nil
+}
+
+func image2RefBatches(refs []string, count int, edit bool) [][]string {
+	clean := make([]string, 0, len(refs))
+	for _, ref := range refs {
+		ref = strings.TrimSpace(ref)
+		if ref != "" {
+			clean = append(clean, ref)
+		}
+	}
+	if count <= 0 {
+		count = 1
+	}
+	if edit && len(clean) > 1 && len(clean) == count {
+		out := make([][]string, 0, count)
+		for _, ref := range clean {
+			out = append(out, []string{ref})
+		}
+		return out
+	}
+	out := make([][]string, count)
+	for i := range out {
+		out[i] = clean
+	}
+	return out
 }
 
 type webFP struct {
@@ -1423,16 +1484,7 @@ func copyParam(dst map[string]any, src map[string]any, key string) {
 }
 
 func shouldUseWebImage2(req *provider.Request) bool {
-	tier := strings.ToUpper(strings.TrimSpace(strParam(req.Params, "resolution", strParam(req.Params, "size_tier", ""))))
-	if tier == "" {
-		size := strParam(req.Params, "size", "")
-		w, h := parseSize(size)
-		if size == "" || w*h <= 1500000 {
-			return true
-		}
-		return false
-	}
-	return tier == "1K" || tier == "1"
+	return false
 }
 
 func isGPTImage2(model string) bool {
@@ -1750,6 +1802,24 @@ func readRefImage(ctx context.Context, client *http.Client, ref string) ([]byte,
 		mime = http.DetectContentType(data)
 	}
 	return data, mime, nil
+}
+
+func inputImageURL(ctx context.Context, client *http.Client, ref string) (string, error) {
+	ref = strings.TrimSpace(ref)
+	if ref == "" {
+		return "", fmt.Errorf("empty reference image")
+	}
+	if strings.HasPrefix(ref, "http://") || strings.HasPrefix(ref, "https://") {
+		return ref, nil
+	}
+	data, mime, err := readRefImage(ctx, client, ref)
+	if err != nil {
+		return "", err
+	}
+	if mime == "" {
+		mime = http.DetectContentType(data)
+	}
+	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(data), nil
 }
 
 func parseWebImageSSE(r io.Reader) (string, []string, []string, []string, string, error) {

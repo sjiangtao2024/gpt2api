@@ -1,8 +1,12 @@
 package gpt
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
+
+	"github.com/kleinai/backend/internal/provider"
 )
 
 func TestExtractWebImageToolIDs(t *testing.T) {
@@ -149,5 +153,55 @@ func TestExtractWebImageDirectURLsIgnoresChatGPTStaticAssets(t *testing.T) {
 	urls := extractWebImageDirectURLs(raw)
 	if len(urls) != 1 || !strings.Contains(urls[0], "files.oaiusercontent.com") {
 		t.Fatalf("expected only generated asset URL, got %#v", urls)
+	}
+}
+
+func TestShouldUseWebImage2DoesNotRouteDefault1KThroughChatGPTWeb(t *testing.T) {
+	req := &provider.Request{
+		ModelCode: "gpt-image-2",
+		Params: map[string]any{
+			"resolution": "1K",
+			"ratio":      "1:1",
+		},
+	}
+
+	if shouldUseWebImage2(req) {
+		t.Fatalf("default 1K gpt-image-2 should use Responses/Codex route, not ChatGPT Web asset scraping")
+	}
+}
+
+func TestInputImageURLConvertsCachedReferenceToDataURL(t *testing.T) {
+	root := t.TempDir()
+	t.Setenv("KLEIN_STORAGE_ROOT", root)
+	rel := filepath.Join("generated", "2026", "05", "14", "ref.png")
+	full := filepath.Join(root, rel)
+	if err := os.MkdirAll(filepath.Dir(full), 0755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(full, []byte{0x89, 'P', 'N', 'G', '\r', '\n', 0x1a, '\n', 0, 0, 0, 0}, 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := inputImageURL(t.Context(), nil, "/api/v1/gen/cached/generated/2026/05/14/ref.png")
+	if err != nil {
+		t.Fatalf("inputImageURL error: %v", err)
+	}
+	if !strings.HasPrefix(got, "data:image/png;base64,") {
+		t.Fatalf("expected cached ref to become data URL, got %q", got)
+	}
+}
+
+func TestImage2RefBatchesSplitsOneToOneMultiImageEdits(t *testing.T) {
+	refs := []string{"ref-a", "ref-b", "ref-c", "ref-d"}
+
+	batches := image2RefBatches(refs, 4, true)
+
+	if len(batches) != 4 {
+		t.Fatalf("expected 4 batches, got %#v", batches)
+	}
+	for i, batch := range batches {
+		if len(batch) != 1 || batch[0] != refs[i] {
+			t.Fatalf("batch %d should contain only %q, got %#v", i, refs[i], batch)
+		}
 	}
 }

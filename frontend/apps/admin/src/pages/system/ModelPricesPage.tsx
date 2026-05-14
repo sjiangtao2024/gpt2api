@@ -20,6 +20,7 @@ interface PriceRow {
 
 const DEFAULT_ROWS: PriceRow[] = [
   { model_code: 'gpt-4o-mini', name: '文字对话', kind: 'text', provider: 'gpt', upstream_model: 'gpt-4o-mini', unit_points: 0, input_unit_points: 1, output_unit_points: 3, enabled: true },
+  { model_code: 'gpt-image-2', name: 'GPT Image 2', kind: 'image', provider: 'gpt', upstream_model: 'gpt-image-2', unit_points: 0, enabled: true },
   { model_code: 'img-v3', name: '通用图片', kind: 'image', provider: 'gpt', upstream_model: 'gpt-image', unit_points: 4, enabled: true },
   { model_code: 'img-real', name: '真实图片', kind: 'image', provider: 'gpt', upstream_model: 'gpt-image-real', unit_points: 4, enabled: true },
   { model_code: 'img-anime', name: '动漫图片', kind: 'image', provider: 'gpt', upstream_model: 'gpt-image-anime', unit_points: 3, enabled: true },
@@ -158,8 +159,12 @@ export default function ModelPricesPage() {
                   )}
                 </td>
                 <td>
-                  <button className={row.enabled ? 'btn btn-outline btn-sm' : 'btn btn-ghost btn-sm'} onClick={() => update(idx, { enabled: !row.enabled })}>
-                    {row.enabled ? '启用' : '停用'}
+                  <button
+                    className={row.enabled ? 'btn btn-outline btn-sm' : 'btn btn-ghost btn-sm'}
+                    title={row.enabled ? '点击停用该模型' : '点击启用该模型'}
+                    onClick={() => update(idx, { enabled: !row.enabled })}
+                  >
+                    {row.enabled ? '已启用' : '已停用'}
                   </button>
                 </td>
                 <td>
