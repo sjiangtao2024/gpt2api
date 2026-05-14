@@ -79,6 +79,19 @@ const DEFAULT_FORM: FormState = {
   image_prompt_optimizer_log_brief: true,
 };
 
+const PROMPT_OPTIMIZER_MODES = [
+  { value: 'advertising_general', label: '通用广告增强' },
+  { value: 'interior_design', label: '室内空间/建筑效果' },
+  { value: 'product_photography', label: '产品摄影/电商主图' },
+  { value: 'brand_poster', label: '品牌海报/营销视觉' },
+  { value: 'fashion_portrait', label: '人像服装/模特写真' },
+] as const;
+
+const normalizePromptOptimizerMode = (v: unknown) => {
+  const s = asStr(v, 'advertising_general');
+  return PROMPT_OPTIMIZER_MODES.some((m) => m.value === s) ? s : 'advertising_general';
+};
+
 const asBool = (v: unknown, fallback = false) => (v == null ? fallback : Boolean(v));
 const asNum = (v: unknown, fallback: number) => {
   const n = Number(v);
@@ -120,7 +133,7 @@ function fromSettings(s: SystemSettings | undefined): FormState {
     image_prompt_optimizer_enabled: asBool(s['image.prompt_optimizer.enabled']),
     image_prompt_optimizer_model: asStr(s['image.prompt_optimizer.model'], 'gpt-5.5'),
     image_prompt_optimizer_timeout_seconds: asNum(s['image.prompt_optimizer.timeout_seconds'], 60),
-    image_prompt_optimizer_mode: asStr(s['image.prompt_optimizer.mode'], 'advertising_general'),
+    image_prompt_optimizer_mode: normalizePromptOptimizerMode(s['image.prompt_optimizer.mode']),
     image_prompt_optimizer_log_brief: asBool(s['image.prompt_optimizer.log_brief'], true),
   };
 }
@@ -318,12 +331,22 @@ export default function ConfigPage() {
             <Toggle label="启用广告提示词优化" checked={form.image_prompt_optimizer_enabled} onChange={(v) => set('image_prompt_optimizer_enabled', v)} />
             <div className="grid gap-3 md:grid-cols-2">
               <TextField label="优化模型" value={form.image_prompt_optimizer_model} onChange={(v) => set('image_prompt_optimizer_model', v)} placeholder="gpt-5.5" />
-              <TextField label="优化模式" value={form.image_prompt_optimizer_mode} onChange={(v) => set('image_prompt_optimizer_mode', v)} placeholder="advertising_general" />
+              <Field label="优化模式">
+                <select
+                  className="select"
+                  value={form.image_prompt_optimizer_mode}
+                  onChange={(e) => set('image_prompt_optimizer_mode', normalizePromptOptimizerMode(e.target.value))}
+                >
+                  {PROMPT_OPTIMIZER_MODES.map((mode) => (
+                    <option key={mode.value} value={mode.value}>{mode.label}</option>
+                  ))}
+                </select>
+              </Field>
             </div>
             <NumberField label="优化超时（秒）" value={form.image_prompt_optimizer_timeout_seconds} min={10} max={300} onChange={(v) => set('image_prompt_optimizer_timeout_seconds', v)} />
             <Toggle label="记录优化 brief" checked={form.image_prompt_optimizer_log_brief} onChange={(v) => set('image_prompt_optimizer_log_brief', v)} />
             <div className="rounded-md border border-border bg-surface-2 p-3 text-small text-text-tertiary">
-              仅对带参考图的 GPT Image 2 任务生效。优化失败会自动回退原始提示词，不会中断生成。
+              当前后端已支持通用广告增强；其他模式先按通用广告增强处理，后续会逐步接入专用模板。优化失败会自动回退原始提示词，不会中断生成。
             </div>
           </Section>
 
