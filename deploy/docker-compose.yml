@@ -68,6 +68,15 @@ services:
       retries: 6
     networks: [klein]
 
+  storage-init:
+    image: alpine:3.22
+    container_name: klein-storage-init
+    command: ["sh", "-c", "mkdir -p /data/generated && chown -R 65532:65532 /data && chmod -R u+rwX,g+rwX /data"]
+    volumes:
+      - klein-storage:/data
+    restart: "no"
+    networks: [klein]
+
   api:
     image: kleinai/backend:latest
     build:
@@ -86,6 +95,7 @@ services:
     depends_on:
       mysql:  { condition: service_healthy }
       redis:  { condition: service_healthy }
+      storage-init: { condition: service_completed_successfully }
     healthcheck:
       disable: true
     deploy:
@@ -108,6 +118,7 @@ services:
     depends_on:
       mysql:  { condition: service_healthy }
       redis:  { condition: service_healthy }
+      storage-init: { condition: service_completed_successfully }
     deploy:
       resources:
         limits: { cpus: '1', memory: 512M }
@@ -128,6 +139,7 @@ services:
     depends_on:
       mysql:  { condition: service_healthy }
       redis:  { condition: service_healthy }
+      storage-init: { condition: service_completed_successfully }
     deploy:
       resources:
         limits: { cpus: '2', memory: 1G }
@@ -147,6 +159,7 @@ services:
     depends_on:
       mysql:  { condition: service_healthy }
       redis:  { condition: service_healthy }
+      storage-init: { condition: service_completed_successfully }
     deploy:
       resources:
         limits: { cpus: '2', memory: 1G }

@@ -355,6 +355,8 @@ func (s *GenerationService) runTask(ctx context.Context, t *model.GenerationTask
 
 	if err := s.repo.SetSucceeded(ctx, t.TaskID, results); err != nil {
 		log.Error("set succeeded failed", zap.Error(err))
+		s.failTask(ctx, t, "persist generation result: "+err.Error())
+		return
 	}
 	s.updateAccountUsageMeta(ctx, acc, t, len(results))
 	if t.CostPoints > 0 {
@@ -808,7 +810,7 @@ func (s *GenerationService) resolveProxyURL(ctx context.Context, acc *model.Acco
 }
 
 func (s *GenerationService) cacheResultAssets(ctx context.Context, t *model.GenerationTask, acc *model.Account, results []*model.GenerationResult) {
-	if len(results) == 0 || s.cfg == nil || s.aes == nil || acc == nil {
+	if len(results) == 0 || s.cfg == nil {
 		return
 	}
 	driver := strings.ToLower(strings.TrimSpace(s.cfg.GetString(ctx, "storage.result_cache_driver", "local")))
@@ -821,12 +823,34 @@ func (s *GenerationService) cacheResultAssets(ctx context.Context, t *model.Gene
 	if driver != "local" && driver != "oss" {
 		driver = "local"
 	}
-	plain, err := s.aes.Decrypt(acc.CredentialEnc)
-	if err != nil {
-		logger.FromCtx(ctx).Warn("asset.cache.decrypt_failed", zap.Error(err))
-		return
+	cookie := ""
+	needsCookie := false
+	for _, gr := range results {
+		if gr == nil {
+			continue
+		}
+		if raw := strings.TrimSpace(gr.URL); raw != "" && !strings.HasPrefix(raw, "data:") && !strings.HasPrefix(raw, "/api/v1/gen/cached/") {
+			needsCookie = true
+			break
+		}
+		if gr.ThumbURL != nil {
+			if raw := strings.TrimSpace(*gr.ThumbURL); raw != "" && !strings.HasPrefix(raw, "data:") && !strings.HasPrefix(raw, "/api/v1/gen/cached/") {
+				needsCookie = true
+				break
+			}
+		}
 	}
-	cookie := buildCookieForAssetDownload(string(plain))
+	if needsCookie {
+		if s.aes == nil || acc == nil {
+			return
+		}
+		plain, err := s.aes.Decrypt(acc.CredentialEnc)
+		if err != nil {
+			logger.FromCtx(ctx).Warn("asset.cache.decrypt_failed", zap.Error(err))
+			return
+		}
+		cookie = buildCookieForAssetDownload(string(plain))
+	}
 	for i, gr := range results {
 		if u, ok := s.cacheOneAsset(ctx, driver, cookie, gr.URL, t.TaskID, i, false); ok {
 			gr.URL = u
