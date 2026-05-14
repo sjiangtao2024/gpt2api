@@ -1,5 +1,5 @@
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Cloud, CreditCard, Database, RefreshCw, Save, ShieldAlert, Trash2 } from 'lucide-react';
+import { Cloud, CreditCard, Database, RefreshCw, Save, ShieldAlert, Sparkles, Trash2 } from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 
 import { ApiError } from '../../lib/api';
@@ -36,6 +36,11 @@ interface FormState {
   alipay_private_key: string;
   wechat_mch_id: string;
   wechat_api_v3_key: string;
+  image_prompt_optimizer_enabled: boolean;
+  image_prompt_optimizer_model: string;
+  image_prompt_optimizer_timeout_seconds: number;
+  image_prompt_optimizer_mode: string;
+  image_prompt_optimizer_log_brief: boolean;
 }
 
 const DEFAULT_FORM: FormState = {
@@ -67,6 +72,11 @@ const DEFAULT_FORM: FormState = {
   alipay_private_key: '',
   wechat_mch_id: '',
   wechat_api_v3_key: '',
+  image_prompt_optimizer_enabled: false,
+  image_prompt_optimizer_model: 'gpt-5.5',
+  image_prompt_optimizer_timeout_seconds: 60,
+  image_prompt_optimizer_mode: 'advertising_general',
+  image_prompt_optimizer_log_brief: true,
 };
 
 const asBool = (v: unknown, fallback = false) => (v == null ? fallback : Boolean(v));
@@ -107,6 +117,11 @@ function fromSettings(s: SystemSettings | undefined): FormState {
     alipay_private_key: asStr(s['payment.alipay_private_key']),
     wechat_mch_id: asStr(s['payment.wechat_mch_id']),
     wechat_api_v3_key: asStr(s['payment.wechat_api_v3_key']),
+    image_prompt_optimizer_enabled: asBool(s['image.prompt_optimizer.enabled']),
+    image_prompt_optimizer_model: asStr(s['image.prompt_optimizer.model'], 'gpt-5.5'),
+    image_prompt_optimizer_timeout_seconds: asNum(s['image.prompt_optimizer.timeout_seconds'], 60),
+    image_prompt_optimizer_mode: asStr(s['image.prompt_optimizer.mode'], 'advertising_general'),
+    image_prompt_optimizer_log_brief: asBool(s['image.prompt_optimizer.log_brief'], true),
   };
 }
 
@@ -140,6 +155,11 @@ function toPayload(f: FormState): Partial<SystemSettings> {
     'payment.alipay_private_key': f.alipay_private_key.trim(),
     'payment.wechat_mch_id': f.wechat_mch_id.trim(),
     'payment.wechat_api_v3_key': f.wechat_api_v3_key.trim(),
+    'image.prompt_optimizer.enabled': f.image_prompt_optimizer_enabled,
+    'image.prompt_optimizer.model': f.image_prompt_optimizer_model.trim() || 'gpt-5.5',
+    'image.prompt_optimizer.timeout_seconds': Number(f.image_prompt_optimizer_timeout_seconds) || 60,
+    'image.prompt_optimizer.mode': f.image_prompt_optimizer_mode.trim() || 'advertising_general',
+    'image.prompt_optimizer.log_brief': f.image_prompt_optimizer_log_brief,
   };
 }
 
@@ -291,6 +311,19 @@ export default function ConfigPage() {
               >
                 <Trash2 size={14} /> 清空全部缓存
               </button>
+            </div>
+          </Section>
+
+          <Section icon={<Sparkles size={18} />} title="广告提示词优化" desc="生成图片前先用 GPT 识图，改写成广告行业 brief，再交给图片模型。">
+            <Toggle label="启用广告提示词优化" checked={form.image_prompt_optimizer_enabled} onChange={(v) => set('image_prompt_optimizer_enabled', v)} />
+            <div className="grid gap-3 md:grid-cols-2">
+              <TextField label="优化模型" value={form.image_prompt_optimizer_model} onChange={(v) => set('image_prompt_optimizer_model', v)} placeholder="gpt-5.5" />
+              <TextField label="优化模式" value={form.image_prompt_optimizer_mode} onChange={(v) => set('image_prompt_optimizer_mode', v)} placeholder="advertising_general" />
+            </div>
+            <NumberField label="优化超时（秒）" value={form.image_prompt_optimizer_timeout_seconds} min={10} max={300} onChange={(v) => set('image_prompt_optimizer_timeout_seconds', v)} />
+            <Toggle label="记录优化 brief" checked={form.image_prompt_optimizer_log_brief} onChange={(v) => set('image_prompt_optimizer_log_brief', v)} />
+            <div className="rounded-md border border-border bg-surface-2 p-3 text-small text-text-tertiary">
+              仅对带参考图的 GPT Image 2 任务生效。优化失败会自动回退原始提示词，不会中断生成。
             </div>
           </Section>
 
