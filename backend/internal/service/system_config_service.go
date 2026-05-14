@@ -36,6 +36,11 @@ const (
 	SettingGrokCFBrowser       = "grok.cf.browser"
 	SettingGrokCFLastError     = "grok.cf.last_error"
 	SettingGrokCFLastRefreshAt = "grok.cf.last_refresh_at"
+	SettingImagePromptOptOn    = "image.prompt_optimizer.enabled"
+	SettingImagePromptOptModel = "image.prompt_optimizer.model"
+	SettingImagePromptOptTO    = "image.prompt_optimizer.timeout_seconds"
+	SettingImagePromptOptMode  = "image.prompt_optimizer.mode"
+	SettingImagePromptOptLog   = "image.prompt_optimizer.log_brief"
 )
 
 // SystemConfigService 通用系统配置 KV 服务，带 30s 内存缓存。
@@ -237,6 +242,37 @@ func (s *SystemConfigService) RetryTimeout(ctx context.Context, fallback time.Du
 		v = 3600
 	}
 	return time.Duration(v) * time.Second
+}
+
+func (s *SystemConfigService) ImagePromptOptimizerEnabled(ctx context.Context) bool {
+	return s.GetBool(ctx, SettingImagePromptOptOn, false)
+}
+
+func (s *SystemConfigService) ImagePromptOptimizerModel(ctx context.Context) string {
+	return s.GetString(ctx, SettingImagePromptOptModel, "gpt-5.5")
+}
+
+func (s *SystemConfigService) ImagePromptOptimizerTimeout(ctx context.Context) time.Duration {
+	v := s.GetInt(ctx, SettingImagePromptOptTO, 60)
+	if v <= 0 {
+		v = 60
+	}
+	if v > 300 {
+		v = 300
+	}
+	return time.Duration(v) * time.Second
+}
+
+func (s *SystemConfigService) ImagePromptOptimizerMode(ctx context.Context) string {
+	mode := strings.ToLower(strings.TrimSpace(s.GetString(ctx, SettingImagePromptOptMode, "advertising_general")))
+	if mode == "" {
+		return "advertising_general"
+	}
+	return mode
+}
+
+func (s *SystemConfigService) ImagePromptOptimizerLogBrief(ctx context.Context) bool {
+	return s.GetBool(ctx, SettingImagePromptOptLog, true)
 }
 
 // CircuitFailureThreshold 连续失败达到该次数后才把账号置为熔断。

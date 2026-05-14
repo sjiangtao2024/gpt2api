@@ -48,6 +48,7 @@ type GenerationService struct {
 	aes       *crypto.AESGCM // 用于解密 account.credential_enc
 	proxySvc  *ProxyService
 	cfg       *SystemConfigService
+	optimizer *PromptOptimizerService
 }
 
 // PriceFunc 模型计费：返回单次成本（点 *100）。
@@ -65,6 +66,7 @@ func NewGenerationService(db *gorm.DB, r *repo.GenerationRepo, pool *AccountPool
 		aes:       aes,
 		proxySvc:  proxySvc,
 		cfg:       cfg,
+		optimizer: NewPromptOptimizerService(db, cfg),
 	}
 }
 
@@ -265,6 +267,21 @@ func (s *GenerationService) runTask(ctx context.Context, t *model.GenerationTask
 				continue
 			}
 			provReq.Credential = cred
+		}
+		if s.optimizer != nil {
+			if opt, ok := s.optimizer.Optimize(ctx, PromptOptimizationRequest{
+				Task:       t,
+				Account:    acc,
+				Credential: provReq.Credential,
+				ProxyURL:   provReq.ProxyURL,
+				Prompt:     provReq.Prompt,
+				Refs:       refs,
+			}); ok && opt != nil {
+				provReq.Prompt = opt.OptimizedPrompt
+				if provReq.NegPrompt == "" && opt.NegativePrompt != "" {
+					provReq.NegPrompt = opt.NegativePrompt
+				}
+			}
 		}
 
 		rctx, cancel := context.WithTimeout(ctx, timeout)

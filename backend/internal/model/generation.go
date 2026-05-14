@@ -84,3 +84,24 @@ type GenerationUpstreamLog struct {
 }
 
 func (GenerationUpstreamLog) TableName() string { return "generation_upstream_log" }
+
+// GenerationPromptOptimization records the internal prompt optimization pass.
+type GenerationPromptOptimization struct {
+	ID              uint64    `gorm:"primaryKey;column:id" json:"id"`
+	TaskID          string    `gorm:"column:task_id;size:26;not null;index:idx_task_created,priority:1" json:"task_id"`
+	AccountID       *uint64   `gorm:"column:account_id" json:"account_id,omitempty"`
+	OptimizerModel  string    `gorm:"column:optimizer_model;size:64;not null" json:"optimizer_model"`
+	Mode            string    `gorm:"column:mode;size:64;not null" json:"mode"`
+	OriginalPrompt  string    `gorm:"column:original_prompt;type:mediumtext;not null" json:"original_prompt"`
+	OptimizedPrompt *string   `gorm:"column:optimized_prompt;type:mediumtext" json:"optimized_prompt,omitempty"`
+	NegativePrompt  *string   `gorm:"column:negative_prompt;type:mediumtext" json:"negative_prompt,omitempty"`
+	BriefJSON       *string   `gorm:"column:brief_json;type:json" json:"brief_json,omitempty"`
+	Status          string    `gorm:"column:status;size:24;not null;index:idx_status_created,priority:1" json:"status"`
+	Error           *string   `gorm:"column:error;type:text" json:"error,omitempty"`
+	LatencyMs       int64     `gorm:"column:latency_ms;not null" json:"latency_ms"`
+	CreatedAt       time.Time `gorm:"column:created_at;autoCreateTime;index:idx_task_created,priority:2;index:idx_status_created,priority:2" json:"created_at"`
+}
+
+func (GenerationPromptOptimization) TableName() string {
+	return "generation_prompt_optimization"
+}
