@@ -23,7 +23,7 @@ INSERT INTO `system_config` (`key`, `value`, `remark`) VALUES
   ('image.prompt_optimizer.enabled', 'false', '图片广告提示词优化器开关'),
   ('image.prompt_optimizer.model', '"gpt-5.5"', '图片广告提示词优化器模型'),
   ('image.prompt_optimizer.timeout_seconds', '60', '图片广告提示词优化器超时秒数'),
-  ('image.prompt_optimizer.mode', '"advertising_general"', '图片广告提示词优化器模式'),
+  ('image.prompt_optimizer.mode', '"advertising_auto"', '图片广告提示词优化器策略模式'),
   ('image.prompt_optimizer.log_brief', 'true', '是否记录提示词优化 brief')
 ON DUPLICATE KEY UPDATE `remark`=VALUES(`remark`);
 -- +goose StatementEnd

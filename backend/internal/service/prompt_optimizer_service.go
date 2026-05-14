@@ -39,6 +39,8 @@ type PromptOptimizationRequest struct {
 }
 
 type PromptOptimizationBrief struct {
+	DetectedScene   string   `json:"detected_scene"`
+	SceneConfidence float64  `json:"scene_confidence"`
 	SceneType       string   `json:"scene_type"`
 	VisualSummary   string   `json:"visual_summary"`
 	CommercialGoal  string   `json:"commercial_goal"`
@@ -326,6 +328,8 @@ func extractOptimizerText(v any) string {
 func advertisingOptimizerPrompt(userPrompt string) string {
 	return `你是资深广告视觉总监和商业修图师。请阅读参考图片和用户修改需求，输出严格 JSON，不要输出 Markdown。
 JSON 字段：
+detected_scene: 自动识别的场景枚举，只能是 interior_design / product_photography / brand_poster / fashion_portrait / ecommerce_main_image / social_ad / other
+scene_confidence: 0 到 1 的场景判断置信度
 scene_type: 场景类型
 visual_summary: 对参考图的客观描述
 commercial_goal: 广告/商业目标
@@ -340,6 +344,7 @@ negative_prompt: 禁止项
 2. 将用户的自然语言需求改写成广告行业可交付的图片编辑 brief。
 3. 如果参考图有多张，除非用户明确要求拼图，否则 optimized_prompt 必须要求单张完整画面。
 4. 不要编造无法从参考图判断的品牌信息。
+5. 自动判断广告场景，不要要求用户选择模式。
 
 用户需求：` + strings.TrimSpace(userPrompt)
 }

@@ -264,9 +264,9 @@ func (s *SystemConfigService) ImagePromptOptimizerTimeout(ctx context.Context) t
 }
 
 func (s *SystemConfigService) ImagePromptOptimizerMode(ctx context.Context) string {
-	mode := strings.ToLower(strings.TrimSpace(s.GetString(ctx, SettingImagePromptOptMode, "advertising_general")))
+	mode := strings.ToLower(strings.TrimSpace(s.GetString(ctx, SettingImagePromptOptMode, "advertising_auto")))
 	if mode == "" {
-		return "advertising_general"
+		return "advertising_auto"
 	}
 	return mode
 }
