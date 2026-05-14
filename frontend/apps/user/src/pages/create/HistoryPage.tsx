@@ -2,6 +2,8 @@ import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
+  ChevronLeft,
+  ChevronRight,
   Copy,
   Download,
   ImageIcon,
@@ -330,22 +332,28 @@ function HistoryImageTile({ src }: { src: string }) {
 }
 
 function PreviewModal({ preview, onClose }: { preview: HistoryPreview; onClose: () => void }) {
-  const blobUrl = useAuthedMediaUrl(preview.src);
+  const [index, setIndex] = useState(preview.index);
+  const src = preview.sources[Math.min(index, preview.sources.length - 1)] || preview.src;
+  const blobUrl = useAuthedMediaUrl(src);
+  const hasMultiple = preview.kind === 'image' && preview.sources.length > 1;
   const [copying, setCopying] = useState(false);
   const [downloading, setDownloading] = useState(false);
+  const go = (delta: number) => setIndex((idx) => (idx + delta + preview.sources.length) % preview.sources.length);
 
   useEffect(() => {
     const onKeyDown = (ev: KeyboardEvent) => {
       if (ev.key === 'Escape') onClose();
+      if (hasMultiple && ev.key === 'ArrowLeft') go(-1);
+      if (hasMultiple && ev.key === 'ArrowRight') go(1);
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [onClose]);
+  }, [hasMultiple, onClose, preview.sources.length]);
 
   const handleCopy = async () => {
     setCopying(true);
     try {
-      await navigator.clipboard.writeText(preview.src);
+      await navigator.clipboard.writeText(src);
     } finally {
       setCopying(false);
     }
@@ -354,7 +362,7 @@ function PreviewModal({ preview, onClose }: { preview: HistoryPreview; onClose: 
   const handleDownload = async () => {
     setDownloading(true);
     try {
-      const file = await fetchAuthedFile(preview.src);
+      const file = await fetchAuthedFile(src);
       const url = URL.createObjectURL(file.blob);
       const a = document.createElement('a');
       a.href = url;
@@ -379,6 +387,7 @@ function PreviewModal({ preview, onClose }: { preview: HistoryPreview; onClose: 
             <p className="truncate text-sm text-text-primary">{preview.model}</p>
             <p className="text-xs text-text-tertiary">
               {fmtRelative(preview.created_at)} · {STATUS_LABEL[preview.status]} · {fmtPoints(preview.cost_points)} 点
+              {hasMultiple ? ` · ${index + 1}/${preview.sources.length}` : ''}
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -397,7 +406,27 @@ function PreviewModal({ preview, onClose }: { preview: HistoryPreview; onClose: 
         </div>
 
         <div className="bg-black/5 p-4">
-          <div className="flex max-h-[75vh] min-h-[360px] items-center justify-center overflow-auto rounded-xl bg-surface-0">
+          <div className="relative flex max-h-[75vh] min-h-[360px] items-center justify-center overflow-auto rounded-xl bg-surface-0">
+            {hasMultiple && (
+              <>
+                <button
+                  type="button"
+                  onClick={() => go(-1)}
+                  className="absolute left-3 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-text-primary shadow-sm hover:bg-white"
+                  title="上一张"
+                >
+                  <ChevronLeft size={20} />
+                </button>
+                <button
+                  type="button"
+                  onClick={() => go(1)}
+                  className="absolute right-3 top-1/2 z-10 grid h-10 w-10 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-text-primary shadow-sm hover:bg-white"
+                  title="下一张"
+                >
+                  <ChevronRight size={20} />
+                </button>
+              </>
+            )}
             {preview.kind === 'video' ? (
               blobUrl ? (
                 <video src={blobUrl} controls className="max-h-[75vh] w-full object-contain" />
@@ -416,6 +445,18 @@ function PreviewModal({ preview, onClose }: { preview: HistoryPreview; onClose: 
               </div>
             )}
           </div>
+          {hasMultiple && (
+            <div className="mt-3 flex justify-center gap-2 overflow-x-auto">
+              {preview.sources.map((item, i) => (
+                <PreviewThumb
+                  key={`${item}-${i}`}
+                  src={item}
+                  active={i === index}
+                  onClick={() => setIndex(i)}
+                />
+              ))}
+            </div>
+          )}
         </div>
 
         <div className="border-t border-border px-4 py-3 text-sm text-text-tertiary">
@@ -467,6 +508,22 @@ function useAuthedMediaUrl(src?: string) {
   return url;
 }
 
+function PreviewThumb({ src, active, onClick }: { src: string; active: boolean; onClick: () => void }) {
+  const url = useAuthedMediaUrl(src);
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      className={clsx(
+        'h-14 w-14 shrink-0 overflow-hidden rounded-md border bg-surface-2 transition',
+        active ? 'border-klein-500 ring-2 ring-klein-500/20' : 'border-border opacity-70 hover:opacity-100',
+      )}
+    >
+      {url && <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />}
+    </button>
+  );
+}
+
 async function fetchAuthedFile(src: string) {
   const token = loadToken();
   const headers: Record<string, string> = {};
@@ -499,6 +556,9 @@ function guessExt(contentType: string, src: string) {
 
 function createPreview(t: GenerationTask): HistoryPreview {
   const first = t.results?.[0];
+  const sources = t.kind === 'image'
+    ? (t.results ?? []).map((row) => row.url || row.thumb_url || '').filter(Boolean)
+    : [first?.url || first?.thumb_url || ''].filter(Boolean);
   return {
     kind: t.kind,
     status: t.status,
@@ -508,6 +568,8 @@ function createPreview(t: GenerationTask): HistoryPreview {
     created_at: t.created_at,
     error: t.error,
     src: first?.url || first?.thumb_url || '',
+    sources,
+    index: 0,
   };
 }
 
@@ -520,6 +582,8 @@ interface HistoryPreview {
   created_at: number;
   error?: string;
   src: string;
+  sources: string[];
+  index: number;
 }
 
 function DeleteConfirmDialog({

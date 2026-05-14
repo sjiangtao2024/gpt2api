@@ -204,7 +204,7 @@ export default function CreateStudioPage() {
   const [textResult, setTextResult] = useState('');
   const [task, setTask] = useState<GenerationTask | null>(null);
   const [historyPageSize, setHistoryPageSize] = useState<(typeof HISTORY_PAGE_SIZES)[number]>(20);
-  const [preview, setPreview] = useState<{ url: string; type: 'image' | 'video'; title: string } | null>(null);
+  const [preview, setPreview] = useState<PreviewState | null>(null);
   const pollRef = useRef<number | null>(null);
   const promptRef = useRef<HTMLTextAreaElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
@@ -697,21 +697,36 @@ function HistoryActionMenu({
   );
 }
 
-function WorkCard({ item, onOpen }: { item: GenerationTask; onOpen: (preview: { url: string; type: 'image' | 'video'; title: string }) => void }) {
+type PreviewState = {
+  urls: string[];
+  index: number;
+  type: 'image' | 'video';
+  title: string;
+};
+
+function WorkCard({ item, onOpen }: { item: GenerationTask; onOpen: (preview: PreviewState) => void }) {
   const results = item.results ?? [];
   const result = results[0];
   const thumb = result?.thumb_url;
   const original = result?.url;
   const [thumbFailed, setThumbFailed] = useState(false);
   const [loadedRatio, setLoadedRatio] = useState<string | null>(null);
+  const [activeIndex, setActiveIndex] = useState(0);
   const isVideo = item.kind === 'video';
   const imageResults = isVideo ? [] : results.filter((row) => row.url || row.thumb_url);
+  const imageUrls = imageResults.map((row) => row.url || row.thumb_url || '').filter(Boolean);
   const hasMultipleImages = imageResults.length > 1;
   const showThumb = !!thumb && !thumbFailed;
   const declaredRatio = result?.width && result?.height ? `${result.width} / ${result.height}` : '';
-  const mediaRatio = hasMultipleImages ? '1 / 1' : loadedRatio || declaredRatio || (isVideo ? '16 / 9' : '1 / 1');
+  const activeImage = imageResults[Math.min(activeIndex, imageResults.length - 1)];
+  const activeUrl = activeImage?.url || activeImage?.thumb_url || '';
+  const mediaRatio = loadedRatio || declaredRatio || (isVideo ? '16 / 9' : '1 / 1');
   const canOpen = item.status === 2 && !!original;
   const prompt = compactPrompt(item.prompt);
+  const goImage = (delta: number) => {
+    if (!hasMultipleImages) return;
+    setActiveIndex((idx) => (idx + delta + imageResults.length) % imageResults.length);
+  };
   const setRatioFromImage = (el: HTMLImageElement) => {
     if (el.naturalWidth > 0 && el.naturalHeight > 0) {
       setLoadedRatio(`${el.naturalWidth} / ${el.naturalHeight}`);
@@ -726,33 +741,81 @@ function WorkCard({ item, onOpen }: { item: GenerationTask; onOpen: (preview: { 
   return (
     <article className="mb-3 break-inside-avoid overflow-hidden rounded-[6px] bg-neutral-100">
       {hasMultipleImages ? (
-        <div className="relative grid grid-cols-2 gap-px bg-neutral-200" style={{ aspectRatio: mediaRatio }}>
-          {imageResults.slice(0, 4).map((row, index) => {
-            const url = row.url || row.thumb_url || '';
-            return (
-              <button
-                key={`${url}-${index}`}
-                type="button"
-                disabled={item.status !== 2 || !url}
-                onClick={() => url && onOpen({ url, type: 'image', title: `${item.model} ${index + 1}` })}
-                className="group relative overflow-hidden bg-neutral-50"
-              >
-                {url && <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />}
-                <div className="absolute inset-0 grid place-items-center bg-black/0 opacity-0 transition group-hover:bg-black/20 group-hover:opacity-100">
-                  <span className="grid h-8 w-8 place-items-center rounded-full bg-white/90 text-neutral-950 shadow-sm">
-                    <Maximize2 size={16} />
-                  </span>
-                </div>
-              </button>
-            );
-          })}
-          <div className="absolute left-2 top-2 rounded-full bg-black/55 px-2 py-0.5 text-xs text-white">{imageResults.length} 张图片</div>
+        <div className="relative bg-neutral-50" style={{ aspectRatio: mediaRatio }}>
+          <button
+            type="button"
+            disabled={item.status !== 2 || !activeUrl}
+            onClick={() => activeUrl && onOpen({ urls: imageUrls, index: activeIndex, type: 'image', title: `${item.model} ${activeIndex + 1}` })}
+            className="group relative h-full w-full overflow-hidden bg-neutral-50"
+          >
+            {activeUrl && (
+              <img
+                src={activeUrl}
+                alt=""
+                className="h-full w-full object-cover"
+                loading="lazy"
+                onLoad={(e) => setRatioFromImage(e.currentTarget)}
+              />
+            )}
+            <div className="absolute inset-0 grid place-items-center bg-black/0 opacity-0 transition group-hover:bg-black/20 group-hover:opacity-100">
+              <span className="grid h-10 w-10 place-items-center rounded-full bg-white/90 text-neutral-950 shadow-sm">
+                <Maximize2 size={18} />
+              </span>
+            </div>
+          </button>
+          <div className="absolute left-2 top-2 rounded-full bg-black/55 px-2 py-0.5 text-xs text-white">
+            {activeIndex + 1} / {imageResults.length}
+          </div>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              goImage(-1);
+            }}
+            className="absolute left-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-black/45 text-white shadow-sm transition hover:bg-black/65"
+            title="上一张"
+          >
+            <ChevronLeft size={18} />
+          </button>
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              goImage(1);
+            }}
+            className="absolute right-2 top-1/2 grid h-8 w-8 -translate-y-1/2 place-items-center rounded-full bg-black/45 text-white shadow-sm transition hover:bg-black/65"
+            title="下一张"
+          >
+            <ChevronRight size={18} />
+          </button>
+          <div className="absolute inset-x-2 bottom-2 flex gap-1 overflow-x-auto rounded-full bg-black/35 p-1 backdrop-blur">
+            {imageResults.map((row, index) => {
+              const url = row.thumb_url || row.url || '';
+              return (
+                <button
+                  key={`${url}-${index}`}
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setActiveIndex(index);
+                  }}
+                  className={clsx(
+                    'h-9 w-9 shrink-0 overflow-hidden rounded-full border transition',
+                    index === activeIndex ? 'border-white shadow-sm' : 'border-white/25 opacity-70 hover:opacity-100',
+                  )}
+                  title={`第 ${index + 1} 张`}
+                >
+                  {url && <img src={url} alt="" className="h-full w-full object-cover" loading="lazy" />}
+                </button>
+              );
+            })}
+          </div>
         </div>
       ) : (
         <button
           type="button"
           disabled={!canOpen}
-          onClick={() => original && onOpen({ url: original, type: isVideo ? 'video' : 'image', title: item.model })}
+          onClick={() => original && onOpen({ urls: [original], index: 0, type: isVideo ? 'video' : 'image', title: item.model })}
           style={{ aspectRatio: mediaRatio }}
           className={clsx(
             'relative grid w-full place-items-center overflow-hidden text-neutral-400 transition-[height]',
@@ -837,14 +900,21 @@ function GeneratingDots() {
   );
 }
 
-function PreviewLightbox({ preview, onClose }: { preview: { url: string; type: 'image' | 'video'; title: string }; onClose: () => void }) {
+function PreviewLightbox({ preview, onClose }: { preview: PreviewState; onClose: () => void }) {
+  const [index, setIndex] = useState(preview.index);
+  const currentUrl = preview.urls[Math.min(index, preview.urls.length - 1)] || '';
+  const hasMultiple = preview.type === 'image' && preview.urls.length > 1;
+  const go = (delta: number) => setIndex((idx) => (idx + delta + preview.urls.length) % preview.urls.length);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') onClose();
+      if (hasMultiple && e.key === 'ArrowLeft') go(-1);
+      if (hasMultiple && e.key === 'ArrowRight') go(1);
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
-  }, [onClose]);
+  }, [hasMultiple, onClose, preview.urls.length]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 p-4" onMouseDown={onClose}>
@@ -857,10 +927,51 @@ function PreviewLightbox({ preview, onClose }: { preview: { url: string; type: '
         >
           <X size={18} />
         </button>
+        {hasMultiple && (
+          <>
+            <div className="absolute left-3 top-3 z-10 rounded-full bg-white/90 px-3 py-1 text-sm text-neutral-900 shadow-sm">
+              {index + 1} / {preview.urls.length}
+            </div>
+            <button
+              type="button"
+              onClick={() => go(-1)}
+              className="absolute left-3 top-1/2 z-10 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-neutral-900 shadow-sm transition hover:bg-white"
+              title="上一张"
+            >
+              <ChevronLeft size={22} />
+            </button>
+            <button
+              type="button"
+              onClick={() => go(1)}
+              className="absolute right-3 top-1/2 z-10 grid h-11 w-11 -translate-y-1/2 place-items-center rounded-full bg-white/90 text-neutral-900 shadow-sm transition hover:bg-white"
+              title="下一张"
+            >
+              <ChevronRight size={22} />
+            </button>
+          </>
+        )}
         {preview.type === 'video' ? (
-          <video src={preview.url} controls autoPlay className="max-h-[92vh] max-w-[92vw] rounded-[12px] bg-black shadow-2xl" />
+          <video src={currentUrl} controls autoPlay className="max-h-[92vh] max-w-[92vw] rounded-[12px] bg-black shadow-2xl" />
         ) : (
-          <img src={preview.url} alt={preview.title} className="max-h-[92vh] max-w-[92vw] rounded-[12px] object-contain shadow-2xl" />
+          <img src={currentUrl} alt={preview.title} className="max-h-[92vh] max-w-[92vw] rounded-[12px] object-contain shadow-2xl" />
+        )}
+        {hasMultiple && (
+          <div className="absolute inset-x-0 bottom-3 mx-auto flex max-w-[min(720px,80vw)] justify-center gap-2 overflow-x-auto rounded-full bg-black/45 p-2 backdrop-blur">
+            {preview.urls.map((url, i) => (
+              <button
+                key={`${url}-${i}`}
+                type="button"
+                onClick={() => setIndex(i)}
+                className={clsx(
+                  'h-12 w-12 shrink-0 overflow-hidden rounded-full border transition',
+                  i === index ? 'border-white opacity-100 shadow-sm' : 'border-white/25 opacity-65 hover:opacity-100',
+                )}
+                title={`第 ${i + 1} 张`}
+              >
+                <img src={url} alt="" className="h-full w-full object-cover" />
+              </button>
+            ))}
+          </div>
         )}
       </div>
     </div>
